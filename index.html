@@ -1,0 +1,932 @@
+<!DOCTYPE html><html lang="pt-BR"><head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>PDFtransform – Converta Imagens em PDF</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            red: {
+              matte: '#B03030',
+              dark:  '#8B2020',
+              light: '#CC4444',
+              xlight:'#F9E8E8',
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin=""/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+
+  <!-- Font Awesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
+
+  <!-- jsPDF -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+  <style>
+    /* Matte texture overlay for red surfaces */
+    .matte-red {
+      background-color: #B03030;
+      background-image:
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3CfeBlend in='SourceGraphic' mode='multiply' result='blend'/%3E%3CfeComposite in='blend' in2='SourceGraphic' operator='in'/%3E%3C/filter%3E%3Crect width='400' height='400' filter='url(%23noise)' opacity='0.08'/%3E%3C/svg%3E");
+    }
+
+    /* Drag-over state */
+    .drag-over {
+      border-color: #B03030 !important;
+      background-color: #F9E8E8 !important;
+    }
+
+    /* Upload zone pulse on hover */
+    .upload-zone:hover .upload-icon {
+      transform: translateY(-4px);
+      transition: transform 0.3s ease;
+    }
+
+    /* PDF iframe */
+    #pdfFrame {
+      border: none;
+      width: 100%;
+      min-height: 480px;
+      border-radius: 8px;
+    }
+
+    /* Step badge */
+    .step-badge {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 0.85rem;
+      flex-shrink: 0;
+    }
+
+    /* Custom scrollbar */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #f1f1f1; }
+    ::-webkit-scrollbar-thumb { background: #B03030; border-radius: 3px; }
+
+    /* Smooth transitions */
+    * { transition: color 0.15s, background-color 0.15s, border-color 0.15s, opacity 0.15s, transform 0.15s, box-shadow 0.15s; }
+
+    /* Mobile menu */
+    #mobileMenu { display: none; }
+    #mobileMenu.open { display: block; }
+
+    /* Print only the PDF content */
+    @media print {
+      body > *:not(#printArea) { display: none !important; }
+      #printArea { display: block !important; }
+    }
+  </style>
+</head>
+<body class="font-sans bg-gray-50 min-h-screen">
+
+  <!-- ===================== HEADER / NAV ===================== -->
+  <header class="matte-red shadow-lg sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex items-center justify-between h-16">
+
+        <!-- Logo -->
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 bg-white rounded-lg flex items-center justify-center shadow-sm">
+            <i class="fa-solid fa-file-pdf text-red-matte text-xl"></i>
+          </div>
+          <span class="text-white font-extrabold text-xl tracking-tight">
+            PDF<span class="font-light opacity-80">transform</span>
+          </span>
+        </div>
+
+        <!-- Desktop Nav -->
+        <nav class="hidden md:flex items-center gap-6">
+          <a href="#upload-section" class="text-white/80 hover:text-white text-sm font-medium flex items-center gap-1.5">
+            <i class="fa-solid fa-upload text-xs"></i> Converter
+          </a>
+          <a href="#how-it-works" class="text-white/80 hover:text-white text-sm font-medium flex items-center gap-1.5">
+            <i class="fa-solid fa-circle-info text-xs"></i> Como Funciona
+          </a>
+          <a href="#suporte" class="text-white/80 hover:text-white text-sm font-medium flex items-center gap-1.5">
+            <i class="fa-solid fa-headset text-xs"></i> Suporte
+          </a>
+          <a href="mailto:contatonunesdev@gmail.com" class="ml-2 bg-white text-red-matte px-4 py-1.5 rounded-full text-sm font-semibold hover:bg-red-xlight shadow-sm">
+            <i class="fa-solid fa-envelope mr-1.5"></i>Contato
+          </a>
+        </nav>
+
+        <!-- Mobile hamburger -->
+        <button id="menuBtn" onclick="toggleMenu()" class="md:hidden text-white p-2 rounded-lg hover:bg-red-dark focus:outline-none" aria-label="Abrir menu">
+          <i id="menuIcon" class="fa-solid fa-bars text-xl"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- Mobile Menu -->
+    <div id="mobileMenu" class="md:hidden bg-red-dark border-t border-white/10">
+      <div class="px-4 py-3 space-y-1">
+        <a href="#upload-section" onclick="closeMobileMenu()" class="flex items-center gap-2 text-white/90 hover:text-white py-2 text-sm font-medium">
+          <i class="fa-solid fa-upload w-5"></i> Converter Imagem
+        </a>
+        <a href="#how-it-works" onclick="closeMobileMenu()" class="flex items-center gap-2 text-white/90 hover:text-white py-2 text-sm font-medium">
+          <i class="fa-solid fa-circle-info w-5"></i> Como Funciona
+        </a>
+        <a href="#suporte" onclick="closeMobileMenu()" class="flex items-center gap-2 text-white/90 hover:text-white py-2 text-sm font-medium">
+          <i class="fa-solid fa-headset w-5"></i> Suporte
+        </a>
+        <div class="border-t border-white/20 pt-3 pb-1 flex flex-col gap-2">
+          <a href="mailto:contatonunesdev@gmail.com" class="flex items-center gap-2 text-white/80 text-sm">
+            <i class="fa-solid fa-envelope w-5"></i> contatonunesdev@gmail.com
+          </a>
+          <a href="tel:+5588099449747" class="flex items-center gap-2 text-white/80 text-sm">
+            <i class="fa-solid fa-phone w-5"></i> (88) 09944-97471
+          </a>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ===================== HERO BANNER ===================== -->
+  <section class="matte-red py-12 md:py-16">
+    <div class="max-w-4xl mx-auto px-4 text-center">
+      <div class="inline-flex items-center bg-white/15 text-white text-xs font-semibold px-3 py-1 rounded-full mb-4 backdrop-blur-sm">
+        <i class="fa-solid fa-star mr-1.5 text-yellow-300"></i> Rápido · Fácil · Gratuito
+      </div>
+      <h1 class="text-3xl md:text-5xl font-extrabold text-white leading-tight mb-4">
+        Converta Imagens em<br class="hidden md:block"/>
+        <span class="text-white/80">PDF com Fundo Branco</span>
+      </h1>
+      <p class="text-white/75 text-base md:text-lg max-w-xl mx-auto mb-8 leading-relaxed">
+        Carregue sua imagem, gere um PDF profissional com fundo branco,
+        visualize, imprima e salve — tudo em segundos.
+      </p>
+      <a href="#upload-section" class="inline-flex items-center gap-2 bg-white text-red-matte font-bold px-7 py-3 rounded-full shadow-lg hover:bg-red-xlight hover:shadow-xl text-sm md:text-base">
+        <i class="fa-solid fa-rocket"></i> Começar Agora
+      </a>
+    </div>
+  </section>
+
+  <!-- ===================== HOW IT WORKS ===================== -->
+  <section id="how-it-works" class="py-10 bg-white border-b border-gray-100">
+    <div class="max-w-5xl mx-auto px-4">
+      <h2 class="text-center text-xl font-bold text-gray-700 mb-8">
+        Como Funciona
+      </h2>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
+        <!-- Step 1 -->
+        <div class="flex flex-col items-center text-center gap-3 p-4">
+          <div class="w-14 h-14 rounded-2xl bg-red-xlight flex items-center justify-center shadow-sm">
+            <i class="fa-solid fa-image text-red-matte text-2xl"></i>
+          </div>
+          <div class="step-badge bg-red-matte text-white">1</div>
+          <div>
+            <p class="font-semibold text-gray-800 text-sm">Carregar Imagem</p>
+            <p class="text-gray-500 text-xs mt-0.5">JPG, PNG, WEBP, GIF</p>
+          </div>
+        </div>
+        <!-- Step 2 -->
+        <div class="flex flex-col items-center text-center gap-3 p-4">
+          <div class="w-14 h-14 rounded-2xl bg-red-xlight flex items-center justify-center shadow-sm">
+            <i class="fa-solid fa-sliders text-red-matte text-2xl"></i>
+          </div>
+          <div class="step-badge bg-red-matte text-white">2</div>
+          <div>
+            <p class="font-semibold text-gray-800 text-sm">Configurar PDF</p>
+            <p class="text-gray-500 text-xs mt-0.5">Tamanho e orientação</p>
+          </div>
+        </div>
+        <!-- Step 3 -->
+        <div class="flex flex-col items-center text-center gap-3 p-4">
+          <div class="w-14 h-14 rounded-2xl bg-red-xlight flex items-center justify-center shadow-sm">
+            <i class="fa-solid fa-file-pdf text-red-matte text-2xl"></i>
+          </div>
+          <div class="step-badge bg-red-matte text-white">3</div>
+          <div>
+            <p class="font-semibold text-gray-800 text-sm">Gerar PDF</p>
+            <p class="text-gray-500 text-xs mt-0.5">Fundo branco automático</p>
+          </div>
+        </div>
+        <!-- Step 4 -->
+        <div class="flex flex-col items-center text-center gap-3 p-4">
+          <div class="w-14 h-14 rounded-2xl bg-red-xlight flex items-center justify-center shadow-sm">
+            <i class="fa-solid fa-print text-red-matte text-2xl"></i>
+          </div>
+          <div class="step-badge bg-red-matte text-white">4</div>
+          <div>
+            <p class="font-semibold text-gray-800 text-sm">Imprimir / Salvar</p>
+            <p class="text-gray-500 text-xs mt-0.5">Diretamente no PC</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== MAIN APP SECTION ===================== -->
+  <main id="upload-section" class="max-w-5xl mx-auto px-4 py-10 space-y-6">
+
+    <!-- Upload Card -->
+    <div class="bg-white rounded-2xl shadow-md overflow-hidden">
+      <div class="matte-red px-6 py-4 flex items-center gap-3">
+        <i class="fa-solid fa-upload text-white"></i>
+        <h2 class="text-white font-bold text-lg">Passo 1 — Carregar Imagem</h2>
+      </div>
+
+      <div class="p-6">
+        <!-- Drop Zone -->
+        <div id="dropZone" class="upload-zone border-2 border-dashed border-red-200 rounded-xl p-10 flex flex-col items-center gap-4 cursor-pointer bg-red-xlight/30 hover:border-red-matte hover:bg-red-xlight" onclick="document.getElementById(&#39;fileInput&#39;).click()" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)">
+          <div class="upload-icon w-16 h-16 rounded-full bg-white shadow-md flex items-center justify-center">
+            <i class="fa-solid fa-image text-red-matte text-3xl"></i>
+          </div>
+          <div class="text-center">
+            <p class="text-gray-700 font-semibold text-base">Arraste a imagem aqui ou <span class="text-red-matte underline">clique para selecionar</span></p>
+            <p class="text-gray-400 text-sm mt-1">Formatos suportados: JPG, PNG, WEBP, GIF, BMP</p>
+          </div>
+          <input type="file" id="fileInput" accept="image/*" class="hidden" onchange="handleFileInput(event)"/>
+        </div>
+
+        <!-- Image Preview -->
+        <div id="previewContainer" class="hidden mt-6">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="font-semibold text-gray-700 flex items-center gap-2">
+              <i class="fa-solid fa-eye text-red-matte"></i> Prévia da Imagem
+            </h3>
+            <button onclick="resetUpload()" class="text-xs text-red-matte hover:text-red-dark font-medium flex items-center gap-1">
+              <i class="fa-solid fa-rotate-left"></i> Trocar imagem
+            </button>
+          </div>
+          <div class="rounded-xl overflow-hidden border border-gray-200 bg-gray-50 flex items-center justify-center p-4" style="min-height:200px; max-height:400px;">
+            <img id="imagePreview" class="max-h-80 max-w-full object-contain rounded-lg shadow-sm" alt="Pré-visualização da imagem carregada"/>
+          </div>
+          <div id="imageInfo" class="mt-3 text-xs text-gray-500 flex flex-wrap gap-4"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Configuration Card -->
+    <div id="configCard" class="bg-white rounded-2xl shadow-md overflow-hidden hidden">
+      <div class="matte-red px-6 py-4 flex items-center gap-3">
+        <i class="fa-solid fa-sliders text-white"></i>
+        <h2 class="text-white font-bold text-lg">Passo 2 — Configurações do PDF</h2>
+      </div>
+
+      <div class="p-6">
+        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-5">
+
+          <!-- Page Size -->
+          <div>
+            <label class="block text-sm font-semibold text-gray-700 mb-2">
+              <i class="fa-solid fa-expand text-red-matte mr-1"></i> Tamanho da Página
+            </label>
+            <select id="pageSize" class="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:border-red-matte focus:ring-2 focus:ring-red-200 bg-white">
+              <option value="a4" selected="">A4 (210 × 297 mm)</option>
+              <option value="a3">A3 (297 × 420 mm)</option>
+              <option value="letter">Carta (216 × 279 mm)</option>
+              <option value="legal">Legal (216 × 356 mm)</option>
+            </select>
+          </div>
+
+          <!-- Orientation -->
+          <div>
+            <label class="block text-sm font-semibold text-gray-700 mb-2">
+              <i class="fa-solid fa-arrows-rotate text-red-matte mr-1"></i> Orientação
+            </label>
+            <select id="orientation" class="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:border-red-matte focus:ring-2 focus:ring-red-200 bg-white">
+              <option value="portrait" selected="">Retrato (Vertical)</option>
+              <option value="landscape">Paisagem (Horizontal)</option>
+            </select>
+          </div>
+
+          <!-- Margin -->
+          <div>
+            <label class="block text-sm font-semibold text-gray-700 mb-2">
+              <i class="fa-solid fa-border-all text-red-matte mr-1"></i> Margem
+            </label>
+            <select id="margin" class="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:border-red-matte focus:ring-2 focus:ring-red-200 bg-white">
+              <option value="0">Sem margem</option>
+              <option value="5">Pequena (5mm)</option>
+              <option value="10" selected="">Média (10mm)</option>
+              <option value="20">Grande (20mm)</option>
+            </select>
+          </div>
+
+          <!-- Fit mode -->
+          <div>
+            <label class="block text-sm font-semibold text-gray-700 mb-2">
+              <i class="fa-solid fa-crop-simple text-red-matte mr-1"></i> Ajuste da Imagem
+            </label>
+            <select id="fitMode" class="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:border-red-matte focus:ring-2 focus:ring-red-200 bg-white">
+              <option value="fit" selected="">Ajustar (manter proporção)</option>
+              <option value="fill">Preencher (cortar se necessário)</option>
+              <option value="original">Tamanho original</option>
+            </select>
+          </div>
+
+          <!-- Image quality -->
+          <div>
+            <label class="block text-sm font-semibold text-gray-700 mb-2">
+              <i class="fa-solid fa-star text-red-matte mr-1"></i> Qualidade
+            </label>
+            <select id="quality" class="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:border-red-matte focus:ring-2 focus:ring-red-200 bg-white">
+              <option value="0.7">Econômica (70%)</option>
+              <option value="0.85" selected="">Alta (85%)</option>
+              <option value="1">Máxima (100%)</option>
+            </select>
+          </div>
+
+          <!-- File name -->
+          <div>
+            <label class="block text-sm font-semibold text-gray-700 mb-2">
+              <i class="fa-solid fa-tag text-red-matte mr-1"></i> Nome do Arquivo
+            </label>
+            <input type="text" id="fileName" value="documento" placeholder="nome-do-arquivo" class="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:border-red-matte focus:ring-2 focus:ring-red-200"/>
+          </div>
+        </div>
+
+        <!-- Generate Button -->
+        <div class="mt-6 flex justify-center">
+          <button onclick="generatePDF()" id="generateBtn" class="matte-red text-white font-bold px-10 py-3.5 rounded-full shadow-lg hover:shadow-xl flex items-center gap-2.5 text-base">
+            <i class="fa-solid fa-file-pdf"></i>
+            Gerar PDF com Fundo Branco
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Progress Bar -->
+    <div id="progressContainer" class="hidden bg-white rounded-2xl shadow-md p-6">
+      <div class="flex items-center gap-3 mb-3">
+        <i class="fa-solid fa-spinner fa-spin text-red-matte text-lg"></i>
+        <span class="font-semibold text-gray-700" id="progressLabel">Gerando PDF…</span>
+      </div>
+      <div class="w-full bg-gray-100 rounded-full h-2.5 overflow-hidden">
+        <div id="progressBar" class="h-2.5 rounded-full bg-red-matte" style="width:0%; transition: width 0.4s ease;"></div>
+      </div>
+    </div>
+
+    <!-- PDF Result Card -->
+    <div id="resultCard" class="bg-white rounded-2xl shadow-md overflow-hidden hidden">
+      <div class="matte-red px-6 py-4 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <i class="fa-solid fa-check-circle text-white"></i>
+          <h2 class="text-white font-bold text-lg">PDF Gerado com Sucesso!</h2>
+        </div>
+        <span id="pdfSizeLabel" class="text-white/70 text-xs font-medium"></span>
+      </div>
+
+      <div class="p-6 space-y-5">
+        <!-- Action Buttons -->
+        <div class="flex flex-wrap gap-3 justify-center">
+          <button onclick="printPDF()" class="flex items-center gap-2 bg-red-matte text-white font-bold px-6 py-3 rounded-full shadow-md hover:bg-red-dark hover:shadow-lg text-sm">
+            <i class="fa-solid fa-print"></i> Imprimir PDF
+          </button>
+          <button onclick="downloadPDF()" class="flex items-center gap-2 bg-gray-800 text-white font-bold px-6 py-3 rounded-full shadow-md hover:bg-gray-900 hover:shadow-lg text-sm">
+            <i class="fa-solid fa-download"></i> Salvar no Computador
+          </button>
+          <button onclick="openPDFNewTab()" class="flex items-center gap-2 border-2 border-red-matte text-red-matte font-bold px-6 py-3 rounded-full shadow-sm hover:bg-red-xlight text-sm">
+            <i class="fa-solid fa-external-link-alt"></i> Abrir em Nova Aba
+          </button>
+          <button onclick="resetAll()" class="flex items-center gap-2 border-2 border-gray-200 text-gray-500 font-medium px-6 py-3 rounded-full hover:border-gray-300 hover:bg-gray-50 text-sm">
+            <i class="fa-solid fa-rotate-left"></i> Nova Conversão
+          </button>
+        </div>
+
+        <!-- PDF Viewer -->
+        <div>
+          <div class="flex items-center gap-2 mb-3">
+            <i class="fa-solid fa-eye text-red-matte"></i>
+            <h3 class="font-semibold text-gray-700 text-sm">Visualização do PDF</h3>
+          </div>
+          <div class="rounded-xl overflow-hidden border border-gray-200 shadow-inner bg-gray-100">
+            <iframe id="pdfFrame" title="Visualização do PDF gerado" class="w-full" style="min-height: 480px; border: none;"></iframe>
+          </div>
+          <p class="text-xs text-gray-400 mt-2 text-center">
+            <i class="fa-solid fa-circle-info mr-1"></i>
+            Se a prévia não carregar, use &#34;Abrir em Nova Aba&#34; ou &#34;Salvar no Computador&#34;.
+          </p>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ===================== SUPPORT SECTION ===================== -->
+  <section id="suporte" class="py-12 bg-white border-t border-gray-100 mt-6">
+    <div class="max-w-4xl mx-auto px-4">
+      <div class="text-center mb-8">
+        <div class="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-red-xlight mb-4">
+          <i class="fa-solid fa-headset text-red-matte text-2xl"></i>
+        </div>
+        <h2 class="text-2xl font-extrabold text-gray-800">Suporte</h2>
+        <p class="text-gray-500 mt-2">Estamos aqui para ajudar. Entre em contato conosco.</p>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-5 max-w-xl mx-auto">
+        <!-- Email -->
+        <a href="mailto:contatonunesdev@gmail.com" class="flex items-center gap-4 bg-red-xlight/60 hover:bg-red-xlight border border-red-200 rounded-2xl p-5 group">
+          <div class="w-12 h-12 rounded-xl bg-red-matte flex items-center justify-center flex-shrink-0 shadow-sm group-hover:bg-red-dark">
+            <i class="fa-solid fa-envelope text-white text-lg"></i>
+          </div>
+          <div>
+            <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-0.5">E-mail</p>
+            <p class="text-red-matte font-bold text-sm break-all">contatonunesdev@gmail.com</p>
+          </div>
+        </a>
+
+        <!-- Phone -->
+        <a href="tel:+5588099449747" class="flex items-center gap-4 bg-red-xlight/60 hover:bg-red-xlight border border-red-200 rounded-2xl p-5 group">
+          <div class="w-12 h-12 rounded-xl bg-red-matte flex items-center justify-center flex-shrink-0 shadow-sm group-hover:bg-red-dark">
+            <i class="fa-solid fa-phone text-white text-lg"></i>
+          </div>
+          <div>
+            <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-0.5">Telefone</p>
+            <p class="text-red-matte font-bold text-sm">(88) 09944-97471</p>
+          </div>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== FOOTER ===================== -->
+  <footer class="matte-red py-6 mt-0">
+    <div class="max-w-5xl mx-auto px-4 text-center">
+      <div class="flex items-center justify-center gap-2 mb-2">
+        <div class="w-6 h-6 bg-white rounded-md flex items-center justify-center">
+          <i class="fa-solid fa-file-pdf text-red-matte text-xs"></i>
+        </div>
+        <span class="text-white font-bold text-sm">PDFtransform</span>
+      </div>
+      <p class="text-white/60 text-xs">
+        © 2026 PDFtransform. Todos os direitos reservados. Converta imagens em PDF com fundo branco.
+      </p>
+    </div>
+  </footer>
+
+  <!-- ===================== PIX MODAL ===================== -->
+  <div id="pixModal" class="fixed inset-0 z-[9998] items-center justify-center p-4" style="display:none;">
+    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="closePixModal()"></div>
+    <div class="relative bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden">
+      <div class="matte-red px-6 py-5 text-center">
+        <div class="text-4xl mb-2">☕</div>
+        <h3 class="text-white font-extrabold text-xl">Me pague um café!</h3>
+        <p class="text-white/75 text-sm mt-1">Um apoio de <strong class="text-white">R$ 5,00</strong> faz toda a diferença</p>
+      </div>
+      <div class="px-6 py-6 text-center space-y-5">
+        <div class="flex items-center justify-center">
+          <div class="w-16 h-16 rounded-2xl bg-red-xlight flex items-center justify-center shadow-sm">
+            <i class="fa-brands fa-pix text-red-matte text-4xl"></i>
+          </div>
+        </div>
+        <div>
+          <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Chave PIX</p>
+          <div class="bg-red-xlight/60 border border-red-200 rounded-2xl px-5 py-3 flex items-center justify-between gap-3">
+            <span class="text-red-matte font-extrabold text-lg tracking-wide">(88) 99407-9252</span>
+            <button onclick="copyPix()" id="copyBtn" class="flex-shrink-0 bg-red-matte text-white text-xs font-bold px-3 py-1.5 rounded-full hover:bg-red-dark shadow-sm flex items-center gap-1.5">
+              <i class="fa-solid fa-copy"></i> Copiar
+            </button>
+          </div>
+          <p class="text-xs text-gray-400 mt-2">Telefone · Qualquer banco</p>
+        </div>
+        <div class="bg-gray-50 rounded-2xl p-4 text-sm text-gray-600 leading-relaxed">
+          Obrigado pelo seu apoio! Cada café ajuda a manter e melhorar o <strong>PDFtransform</strong>.
+        </div>
+        <button onclick="closePixModal()" class="w-full border-2 border-gray-200 text-gray-500 font-semibold py-2.5 rounded-full hover:bg-gray-50 text-sm">
+          Fechar
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Floating Coffee Button -->
+  <button onclick="openPixModal()" id="coffeeBtn" class="fixed bottom-6 right-6 z-50 flex items-center gap-2 bg-red-matte text-white font-bold px-5 py-3 rounded-full shadow-2xl hover:bg-red-dark text-sm">
+    <span class="text-base">☕</span> Me pague um café
+    <span class="bg-white text-red-matte text-xs font-extrabold px-2 py-0.5 rounded-full ml-0.5">R$5</span>
+  </button>
+
+  <!-- Hidden print area -->
+  <div id="printArea" style="display:none;"></div>
+
+  <!-- ===================== JAVASCRIPT ===================== -->
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      // State
+      let uploadedFile = null;
+      let uploadedDataURL = null;
+      let generatedPdfBlob = null;
+      let generatedPdfURL = null;
+
+      // ---- Mobile Menu ----
+      window.toggleMenu = function () {
+        const menu = document.getElementById('mobileMenu');
+        const icon = document.getElementById('menuIcon');
+        menu.classList.toggle('open');
+        icon.className = menu.classList.contains('open')
+          ? 'fa-solid fa-xmark text-xl'
+          : 'fa-solid fa-bars text-xl';
+      };
+
+      window.closeMobileMenu = function () {
+        const menu = document.getElementById('mobileMenu');
+        const icon = document.getElementById('menuIcon');
+        menu.classList.remove('open');
+        icon.className = 'fa-solid fa-bars text-xl';
+      };
+
+      // ---- Drag & Drop ----
+      window.handleDragOver = function (e) {
+        e.preventDefault();
+        document.getElementById('dropZone').classList.add('drag-over');
+      };
+
+      window.handleDragLeave = function (e) {
+        document.getElementById('dropZone').classList.remove('drag-over');
+      };
+
+      window.handleDrop = function (e) {
+        e.preventDefault();
+        document.getElementById('dropZone').classList.remove('drag-over');
+        const files = e.dataTransfer.files;
+        if (files.length > 0 && files[0].type.startsWith('image/')) {
+          processFile(files[0]);
+        } else {
+          showToast('Por favor, carregue um arquivo de imagem válido.', 'error');
+        }
+      };
+
+      window.handleFileInput = function (e) {
+        const file = e.target.files[0];
+        if (file) processFile(file);
+      };
+
+      function processFile(file) {
+        uploadedFile = file;
+        const reader = new FileReader();
+        reader.onload = function (e) {
+          uploadedDataURL = e.target.result;
+          const img = document.getElementById('imagePreview');
+          img.src = uploadedDataURL;
+          img.onload = function () {
+            // Show preview
+            document.getElementById('previewContainer').classList.remove('hidden');
+            document.getElementById('dropZone').classList.add('hidden');
+            document.getElementById('configCard').classList.remove('hidden');
+            // Image info
+            const info = document.getElementById('imageInfo');
+            const size = (file.size / 1024).toFixed(1);
+            info.innerHTML = `
+              <span><i class="fa-solid fa-file mr-1 text-gray-400"></i>${file.name}</span>
+              <span><i class="fa-solid fa-database mr-1 text-gray-400"></i>${size} KB</span>
+              <span><i class="fa-solid fa-expand mr-1 text-gray-400"></i>${img.naturalWidth} × ${img.naturalHeight} px</span>
+              <span><i class="fa-solid fa-palette mr-1 text-gray-400"></i>${file.type.split('/')[1].toUpperCase()}</span>
+            `;
+            // Smooth scroll
+            setTimeout(() => {
+              document.getElementById('configCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }, 200);
+          };
+        };
+        reader.readAsDataURL(file);
+      }
+
+      window.resetUpload = function () {
+        uploadedFile = null;
+        uploadedDataURL = null;
+        document.getElementById('fileInput').value = '';
+        document.getElementById('imagePreview').src = '';
+        document.getElementById('previewContainer').classList.add('hidden');
+        document.getElementById('dropZone').classList.remove('hidden');
+        document.getElementById('configCard').classList.add('hidden');
+        document.getElementById('resultCard').classList.add('hidden');
+        document.getElementById('progressContainer').classList.add('hidden');
+        if (generatedPdfURL) {
+          URL.revokeObjectURL(generatedPdfURL);
+          generatedPdfURL = null;
+          generatedPdfBlob = null;
+        }
+      };
+
+      window.resetAll = function () {
+        resetUpload();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      };
+
+      // ---- Generate PDF ----
+      window.generatePDF = function () {
+        if (!uploadedDataURL) {
+          showToast('Nenhuma imagem carregada.', 'error');
+          return;
+        }
+
+        // Show progress
+        const progress = document.getElementById('progressContainer');
+        const bar = document.getElementById('progressBar');
+        const label = document.getElementById('progressLabel');
+        const btn = document.getElementById('generateBtn');
+
+        progress.classList.remove('hidden');
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Gerando…';
+        document.getElementById('resultCard').classList.add('hidden');
+
+        // Animate progress
+        let pct = 0;
+        const steps = [
+          { pct: 20, msg: 'Carregando imagem…' },
+          { pct: 45, msg: 'Adicionando fundo branco…' },
+          { pct: 70, msg: 'Inserindo imagem no PDF…' },
+          { pct: 90, msg: 'Finalizando documento…' },
+          { pct: 100, msg: 'Pronto!' },
+        ];
+        let stepIdx = 0;
+
+        function advanceProgress() {
+          if (stepIdx < steps.length) {
+            const s = steps[stepIdx++];
+            bar.style.width = s.pct + '%';
+            label.textContent = s.msg;
+            if (stepIdx < steps.length) {
+              setTimeout(advanceProgress, 220);
+            } else {
+              setTimeout(buildPDF, 250);
+            }
+          }
+        }
+        advanceProgress();
+
+        function buildPDF() {
+          try {
+            const { jsPDF } = window.jspdf;
+            const pageSize = document.getElementById('pageSize').value;
+            const orientation = document.getElementById('orientation').value;
+            const marginMM = parseInt(document.getElementById('margin').value, 10);
+            const fitMode = document.getElementById('fitMode').value;
+            const quality = parseFloat(document.getElementById('quality').value);
+
+            const doc = new jsPDF({
+              orientation: orientation,
+              unit: 'mm',
+              format: pageSize,
+            });
+
+            const pageW = doc.internal.pageSize.getWidth();
+            const pageH = doc.internal.pageSize.getHeight();
+
+            // White background
+            doc.setFillColor(255, 255, 255);
+            doc.rect(0, 0, pageW, pageH, 'F');
+
+            // Drawable area
+            const drawW = pageW - marginMM * 2;
+            const drawH = pageH - marginMM * 2;
+
+            // Load image to get dimensions
+            const img = new Image();
+            img.onload = function () {
+              const iw = img.naturalWidth;
+              const ih = img.naturalHeight;
+
+              // Compress image to canvas with chosen quality
+              const canvas = document.createElement('canvas');
+              canvas.width = iw;
+              canvas.height = ih;
+              const ctx = canvas.getContext('2d');
+              // Fill white on canvas too (for transparent PNGs)
+              ctx.fillStyle = '#ffffff';
+              ctx.fillRect(0, 0, iw, ih);
+              ctx.drawImage(img, 0, 0);
+              const imgData = canvas.toDataURL('image/jpeg', quality);
+
+              let x = marginMM;
+              let y = marginMM;
+              let w, h;
+
+              if (fitMode === 'fit') {
+                const ratio = Math.min(drawW / iw, drawH / ih);
+                w = iw * ratio;
+                h = ih * ratio;
+                // Center
+                x = marginMM + (drawW - w) / 2;
+                y = marginMM + (drawH - h) / 2;
+              } else if (fitMode === 'fill') {
+                const ratio = Math.max(drawW / iw, drawH / ih);
+                w = iw * ratio;
+                h = ih * ratio;
+                x = marginMM + (drawW - w) / 2;
+                y = marginMM + (drawH - h) / 2;
+              } else {
+                // Original size (convert px to mm at 96dpi → 25.4/96)
+                const mmPerPx = 25.4 / 96;
+                w = Math.min(iw * mmPerPx, drawW);
+                h = Math.min(ih * mmPerPx, drawH);
+                x = marginMM + (drawW - w) / 2;
+                y = marginMM + (drawH - h) / 2;
+              }
+
+              doc.addImage(imgData, 'JPEG', x, y, w, h);
+
+              // Get blob
+              generatedPdfBlob = doc.output('blob');
+              if (generatedPdfURL) URL.revokeObjectURL(generatedPdfURL);
+              generatedPdfURL = URL.createObjectURL(generatedPdfBlob);
+
+              // Show result
+              progress.classList.add('hidden');
+              btn.disabled = false;
+              btn.innerHTML = '<i class="fa-solid fa-file-pdf"></i> Gerar PDF com Fundo Branco';
+
+              const sizeKB = (generatedPdfBlob.size / 1024).toFixed(1);
+              document.getElementById('pdfSizeLabel').textContent = `${sizeKB} KB`;
+
+              const frame = document.getElementById('pdfFrame');
+              frame.src = generatedPdfURL + '#toolbar=1&navpanes=0&scrollbar=0';
+
+              document.getElementById('resultCard').classList.remove('hidden');
+              setTimeout(() => {
+                document.getElementById('resultCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }, 100);
+
+              showToast('PDF gerado com sucesso!', 'success');
+            };
+
+            img.onerror = function () {
+              progress.classList.add('hidden');
+              btn.disabled = false;
+              btn.innerHTML = '<i class="fa-solid fa-file-pdf"></i> Gerar PDF com Fundo Branco';
+              showToast('Erro ao processar a imagem.', 'error');
+            };
+
+            img.src = uploadedDataURL;
+
+          } catch (err) {
+            console.error(err);
+            progress.classList.add('hidden');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fa-solid fa-file-pdf"></i> Gerar PDF com Fundo Branco';
+            showToast('Erro ao gerar PDF: ' + err.message, 'error');
+          }
+        }
+      };
+
+      // ---- Print PDF ----
+      window.printPDF = function () {
+        if (!generatedPdfURL) {
+          showToast('Gere o PDF primeiro.', 'error');
+          return;
+        }
+        // Open in hidden iframe and trigger print
+        const printFrame = document.createElement('iframe');
+        printFrame.style.position = 'fixed';
+        printFrame.style.top = '-9999px';
+        printFrame.style.left = '-9999px';
+        printFrame.style.width = '1px';
+        printFrame.style.height = '1px';
+        printFrame.src = generatedPdfURL;
+        document.body.appendChild(printFrame);
+        printFrame.onload = function () {
+          try {
+            printFrame.contentWindow.focus();
+            printFrame.contentWindow.print();
+          } catch (e) {
+            // Fallback: open new tab
+            const tab = window.open(generatedPdfURL, '_blank');
+            if (tab) tab.print();
+          }
+          setTimeout(() => document.body.removeChild(printFrame), 3000);
+        };
+        showToast('Enviando para impressão…', 'info');
+      };
+
+      // ---- Download PDF ----
+      window.downloadPDF = function () {
+        if (!generatedPdfBlob) {
+          showToast('Gere o PDF primeiro.', 'error');
+          return;
+        }
+        const name = (document.getElementById('fileName').value.trim() || 'documento') + '.pdf';
+        const a = document.createElement('a');
+        a.href = generatedPdfURL;
+        a.download = name;
+        a.click();
+        showToast('Download iniciado: ' + name, 'success');
+      };
+
+      // ---- Open in New Tab ----
+      window.openPDFNewTab = function () {
+        if (!generatedPdfURL) {
+          showToast('Gere o PDF primeiro.', 'error');
+          return;
+        }
+        window.open(generatedPdfURL, '_blank');
+      };
+
+      // ---- Toast Notification ----
+      function showToast(msg, type = 'info') {
+        const existing = document.getElementById('toastNotif');
+        if (existing) existing.remove();
+
+        const colors = {
+          success: 'bg-green-600',
+          error:   'bg-red-600',
+          info:    'bg-gray-700',
+        };
+        const icons = {
+          success: 'fa-check-circle',
+          error:   'fa-exclamation-circle',
+          info:    'fa-circle-info',
+        };
+
+        const toast = document.createElement('div');
+        toast.id = 'toastNotif';
+        toast.className = `fixed bottom-6 left-1/2 -translate-x-1/2 z-[9999] flex items-center gap-3 text-white text-sm font-medium px-5 py-3 rounded-full shadow-2xl ${colors[type]}`;
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(-50%) translateY(12px)';
+        toast.innerHTML = `<i class="fa-solid ${icons[type]}"></i><span>${msg}</span>`;
+        document.body.appendChild(toast);
+
+        requestAnimationFrame(() => {
+          toast.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+          toast.style.opacity = '1';
+          toast.style.transform = 'translateX(-50%) translateY(0)';
+        });
+
+        setTimeout(() => {
+          toast.style.opacity = '0';
+          toast.style.transform = 'translateX(-50%) translateY(12px)';
+          setTimeout(() => toast.remove(), 350);
+        }, 3000);
+      }
+
+      // ---- PIX Modal ----
+      window.openPixModal = function () {
+        const modal = document.getElementById('pixModal');
+        modal.style.display = 'flex';
+      };
+
+      window.closePixModal = function () {
+        const modal = document.getElementById('pixModal');
+        modal.style.display = 'none';
+        const btn = document.getElementById('copyBtn');
+        btn.style.backgroundColor = '';
+        btn.innerHTML = '<i class="fa-solid fa-copy"></i> Copiar';
+        btn.classList.remove('bg-green-600');
+        btn.classList.add('bg-red-matte');
+      };
+
+      window.copyPix = function () {
+        const key = '(88) 99407-9252';
+        navigator.clipboard.writeText(key).then(function () {
+          const btn = document.getElementById('copyBtn');
+          btn.classList.remove('bg-red-matte');
+          btn.classList.add('bg-green-600');
+          btn.innerHTML = '<i class="fa-solid fa-check"></i> Copiado!';
+          setTimeout(function () {
+            btn.classList.remove('bg-green-600');
+            btn.classList.add('bg-red-matte');
+            btn.innerHTML = '<i class="fa-solid fa-copy"></i> Copiar';
+          }, 2500);
+          showToast('Chave PIX copiada com sucesso!', 'success');
+        }).catch(function () {
+          showToast('Copie manualmente: (88) 99407-9252', 'info');
+        });
+      };
+
+      // Coffee button hover
+      var coffeeBtn = document.getElementById('coffeeBtn');
+      if (coffeeBtn) {
+        coffeeBtn.addEventListener('mouseenter', function () {
+          coffeeBtn.style.transform = 'translateY(-3px) scale(1.04)';
+        });
+        coffeeBtn.addEventListener('mouseleave', function () {
+          coffeeBtn.style.transform = 'translateY(0) scale(1)';
+        });
+      }
+
+      // Smooth scroll for anchor links
+      document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener('click', function (e) {
+          const target = document.querySelector(this.getAttribute('href'));
+          if (target) {
+            e.preventDefault();
+            target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        });
+      });
+    });
+  </script>
+
+<script>window.onload=function(){var d=document.createElement("div");d.id="appLoadFinished";document.body.appendChild(d);};</script>
+
+
+
+</body></html>
